@@ -57,9 +57,9 @@ Svar KUN med et JSON-objekt, ingen annen tekst:
 print("\n=== OLLAMA ANALYSE ===\n")
 respons = ollama.chat(model="llama3.1:8b", messages=[
     {"role": "user", "content": prompt}
-])
+], options = {"temperature": 0.1})
 
-# Parse JSON og handle på den
+#Parse JSON og handle på den
 try:
     analyse = json.loads(respons["message"]["content"])
     
