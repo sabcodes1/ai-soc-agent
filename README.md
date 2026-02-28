@@ -25,6 +25,6 @@ This project solves that by running the model locally.
 
 ## Roadmap
 - [x] Ollama running locally
-- [ ] Phase 1: Elastic → Python → LLM → terminal output
+- [x] Phase 1: Elastic → Python → LLM → terminal output
 - [ ] Phase 2: Anonymization, correlation, structured output
 - [ ] Phase 3: Dashboard, explainability, Docker deploy
