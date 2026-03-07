@@ -29,17 +29,22 @@ for hit in hits:
     print(f"Årsak:      {event_data.get('FailureReason', 'Ukjent')}")
     print()
 
-# Send første hendelse til Ollama
-first = hits[0]["_source"]
-event_data = first.get('winlog', {}).get('event_data', {})
+# Analyser alle alerts i løkken
+print("\n=== ANALYSERER ALLE ALERTS ===\n")
 
-prompt = f"""
+resultater = []
+
+for hit in hits:
+    source = hit["_source"]
+    event_data = source.get('winlog', {}).get('event_data', {})
+    
+    prompt = f"""
 Du er en SOC-analytiker. Analyser denne Windows-sikkerhetshendelsen.
 
 Hendelse:
-- Tidspunkt: {first.get('@timestamp')}
+- Tidspunkt: {source.get('@timestamp')}
 - Event ID: 4625 (Failed Login)
-- Datamaskin: {first.get('winlog', {}).get('computer_name')}
+- Datamaskin: {source.get('winlog', {}).get('computer_name')}
 - Kilde IP: {event_data.get('IpAddress')}
 - Årsak: {event_data.get('FailureReason')}
 - Status kode: {event_data.get('Status')}
@@ -54,31 +59,38 @@ Svar KUN med et JSON-objekt, ingen annen tekst:
 }}
 """
 
-print("\n=== OLLAMA ANALYSE ===\n")
-respons = ollama.chat(model="llama3.1:8b", messages=[
-    {"role": "user", "content": prompt}
-], options = {"temperature": 0.1})
+    respons = ollama.chat(model="llama3.1:8b", messages=[
+        {"role": "user", "content": prompt}
+    ], options={"temperature": 0.1})
 
-#Parse JSON og handle på den
-try:
-    analyse = json.loads(respons["message"]["content"])
-    
-    print(f"Severity:   {analyse['severity']}")
-    print(f"Type:       {analyse['attack_type']}")
-    print(f"Confidence: {analyse['confidence']}%")
-    print(f"Summary:    {analyse['summary']}")
-    print(f"\nAnbefalte tiltak:")
-    for i, tiltak in enumerate(analyse['actions'], 1):
-        print(f"  {i}. {tiltak}")
+    try:
+        analyse = json.loads(respons["message"]["content"])
+        analyse["tidspunkt"] = source.get('@timestamp')
+        analyse["ip"] = event_data.get('IpAddress')
+        resultater.append(analyse)
 
-    # Eskaleringslogikk
-    if analyse["severity"] == "HIGH" and analyse["confidence"] >= 80:
-        print("\n🚨 ESKALERER TIL ANALYTIKER — HIGH severity med høy konfidens")
-    elif analyse["severity"] == "HIGH":
-        print("\n⚠️  HIGH severity men lav konfidens — krever manuell vurdering")
-    else:
-        print("\n✅ Håndtert automatisk — ingen eskalering nødvendig")
+        print(f"Tidspunkt: {analyse['tidspunkt']}")
+        print(f"Severity:  {analyse['severity']}")
+        print(f"Type:      {analyse['attack_type']}")
+        print(f"Confidence:{analyse['confidence']}%")
+        print()
 
-except json.JSONDecodeError:
-    print("Modellen svarte ikke i JSON-format — rå output:")
-    print(respons["message"]["content"])
+    except json.JSONDecodeError:
+        print(f"JSON-feil for hendelse {source.get('@timestamp')}")
+
+# Korrelasjonslogikk
+from collections import Counter
+ip_count = Counter(r["ip"] for r in resultater)
+high_count = sum(1 for r in resultater if r["severity"] == "HIGH")
+
+print("=== KORRELASJON ===")
+for ip, count in ip_count.items():
+    if count >= 3:
+        print(f"⚠️  {ip} har {count} failed logins — mulig brute force")
+
+if high_count >= 3:
+    print(f"\n🚨 {high_count} HIGH alerts — ESKALERER TIL ANALYTIKER")
+elif high_count >= 1:
+    print(f"\n⚠️  {high_count} HIGH alert — krever vurdering")
+else:
+    print("\n✅ Ingen kritiske alerts")
